@@ -40,4 +40,10 @@ final class CassandraSqlAttributesGetter implements SqlClientAttributesGetter<Ca
   public String getRawStatement(CassandraRequest request) {
     return request.getStatement();
   }
+
+  @Nullable
+  @Override
+  public String getParamValues(CassandraRequest cassandraRequest) {
+    return null;
+  }
 }

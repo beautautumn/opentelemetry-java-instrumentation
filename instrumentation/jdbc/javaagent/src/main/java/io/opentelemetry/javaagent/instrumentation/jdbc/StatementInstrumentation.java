@@ -21,6 +21,7 @@ import io.opentelemetry.javaagent.bootstrap.CallDepth;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeInstrumentation;
 import io.opentelemetry.javaagent.extension.instrumentation.TypeTransformer;
 import java.sql.Statement;
+import java.util.HashMap;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
@@ -68,7 +69,7 @@ public class StatementInstrumentation implements TypeInstrumentation {
       }
 
       Context parentContext = currentContext();
-      request = DbRequest.create(statement, sql);
+      request = DbRequest.create(statement, sql, new HashMap<>());
 
       if (request == null || !statementInstrumenter().shouldStart(parentContext, request)) {
         return;

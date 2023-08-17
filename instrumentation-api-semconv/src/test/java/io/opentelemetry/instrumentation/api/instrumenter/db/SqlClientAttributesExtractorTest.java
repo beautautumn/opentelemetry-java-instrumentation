@@ -16,6 +16,7 @@ import io.opentelemetry.semconv.trace.attributes.SemanticAttributes;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import javax.annotation.Nullable;
 import org.junit.jupiter.api.Test;
 
 class SqlClientAttributesExtractorTest {
@@ -26,6 +27,12 @@ class SqlClientAttributesExtractorTest {
     @Override
     public String getRawStatement(Map<String, String> map) {
       return map.get("db.statement");
+    }
+
+    @Nullable
+    @Override
+    public String getParamValues(Map<String, String> map) {
+      return map.get("db.bind_values");
     }
 
     @Override

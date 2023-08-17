@@ -30,12 +30,16 @@ import java.sql.SQLException;
 import java.sql.SQLWarning;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * This class is internal and is hence not for public use. Its APIs are unstable and can change at
  * any time.
  */
 public class OpenTelemetryStatement<S extends Statement> implements Statement {
+  /** 自定义实现SQL参数变量值的显示 */
+  protected final Map<Integer, Object> paramValues = new HashMap<>();
 
   protected final S delegate;
   protected final DbInfo dbInfo;
@@ -282,7 +286,7 @@ public class OpenTelemetryStatement<S extends Statement> implements Statement {
   protected <T, E extends Exception> T wrapCall(String sql, ThrowingSupplier<T, E> callable)
       throws E {
     Context parentContext = Context.current();
-    DbRequest request = DbRequest.create(dbInfo, sql);
+    DbRequest request = DbRequest.create(dbInfo, sql, this.paramValues);
 
     if (!this.instrumenter.shouldStart(parentContext, request)) {
       return callable.call();

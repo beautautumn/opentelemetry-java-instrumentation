@@ -27,4 +27,7 @@ public interface SqlClientAttributesGetter<REQUEST>
    */
   @Nullable
   String getRawStatement(REQUEST request);
+
+  @Nullable
+  String getParamValues(REQUEST request);
 }

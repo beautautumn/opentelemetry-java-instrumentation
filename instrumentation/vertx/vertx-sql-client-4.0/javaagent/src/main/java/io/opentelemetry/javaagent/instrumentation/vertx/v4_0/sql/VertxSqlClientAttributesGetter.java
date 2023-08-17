@@ -40,4 +40,10 @@ public enum VertxSqlClientAttributesGetter
   public String getRawStatement(VertxSqlClientRequest request) {
     return request.getStatement();
   }
+
+  @Nullable
+  @Override
+  public String getParamValues(VertxSqlClientRequest vertxSqlClientRequest) {
+    return null;
+  }
 }

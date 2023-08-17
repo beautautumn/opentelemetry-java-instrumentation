@@ -13,6 +13,7 @@ import io.opentelemetry.instrumentation.jdbc.internal.dbinfo.DbInfo;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
+import java.util.Map;
 import javax.annotation.Nullable;
 
 /**
@@ -23,26 +24,30 @@ import javax.annotation.Nullable;
 public abstract class DbRequest {
 
   @Nullable
-  public static DbRequest create(PreparedStatement statement) {
-    return create(statement, JdbcData.preparedStatement.get(statement));
+  public static DbRequest create(PreparedStatement statement, Map<Integer, Object> paramValues) {
+    return create(statement, JdbcData.preparedStatement.get(statement), paramValues);
   }
 
   @Nullable
-  public static DbRequest create(Statement statement, String dbStatementString) {
+  public static DbRequest create(
+      Statement statement, String dbStatementString, Map<Integer, Object> paramValues) {
     Connection connection = connectionFromStatement(statement);
     if (connection == null) {
       return null;
     }
 
-    return create(extractDbInfo(connection), dbStatementString);
+    return create(extractDbInfo(connection), dbStatementString, paramValues);
   }
 
-  public static DbRequest create(DbInfo dbInfo, String statement) {
-    return new AutoValue_DbRequest(dbInfo, statement);
+  public static DbRequest create(
+      DbInfo dbInfo, String statement, Map<Integer, Object> paramValues) {
+    return new AutoValue_DbRequest(dbInfo, statement, paramValues);
   }
 
   public abstract DbInfo getDbInfo();
 
   @Nullable
   public abstract String getStatement();
+
+  public abstract Map<Integer, Object> getParamValues();
 }

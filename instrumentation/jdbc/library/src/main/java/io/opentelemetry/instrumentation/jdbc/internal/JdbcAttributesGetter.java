@@ -7,6 +7,9 @@ package io.opentelemetry.instrumentation.jdbc.internal;
 
 import io.opentelemetry.instrumentation.api.instrumenter.db.SqlClientAttributesGetter;
 import io.opentelemetry.instrumentation.jdbc.internal.dbinfo.DbInfo;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import javax.annotation.Nullable;
 
 /**
@@ -44,5 +47,16 @@ public final class JdbcAttributesGetter implements SqlClientAttributesGetter<DbR
   @Override
   public String getRawStatement(DbRequest request) {
     return request.getStatement();
+  }
+
+  @Nullable
+  @Override
+  public String getParamValues(DbRequest dbRequest) {
+    List<String> params = new ArrayList<>();
+    for (Map.Entry<Integer, Object> paramEntity : dbRequest.getParamValues().entrySet()) {
+      params.add(
+          String.format("index: %d, value: %s", paramEntity.getKey(), paramEntity.getValue()));
+    }
+    return String.join(",", params);
   }
 }
