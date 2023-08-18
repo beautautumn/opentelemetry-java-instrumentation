@@ -24,30 +24,11 @@ import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.matcher.ElementMatcher;
 
 public class PreparedStatementInstrumentation implements TypeInstrumentation {
-
-  private static class StatementParameterContent {
-    private boolean inUse;
-    private final Map<Integer, Object> parameterValues = new HashMap<>();
-  }
-
-  private static final Map<Object, StatementParameterContent> statementParameterContents =
-      new ConcurrentHashMap<>();
-
-  private static StatementParameterContent ensureParamContent(PreparedStatement statement) {
-    StatementParameterContent content = statementParameterContents.get(statement);
-    if (content == null) {
-      content = new StatementParameterContent();
-      statementParameterContents.put(statement, content);
-    }
-    return content;
-  }
-
   @Override
   public ElementMatcher<ClassLoader> classLoaderOptimization() {
     return hasClassesNamed("java.sql.PreparedStatement");
@@ -61,19 +42,22 @@ public class PreparedStatementInstrumentation implements TypeInstrumentation {
   @Override
   public void transform(TypeTransformer transformer) {
     transformer.applyAdviceToMethod(
-        nameStartsWith("execute").and(takesArguments(0)).and(isPublic()),
-        PreparedStatementInstrumentation.class.getName() + "$PreparedStatementExecuteAdvice");
-    transformer.applyAdviceToMethod(
-        nameStartsWith("set").and(isPublic()),
-        PreparedStatementInstrumentation.class.getName() + "$PreparedStatementSetParamAdvice");
+        nameStartsWith("set")
+            .and(isPublic())
+            .or(nameStartsWith("execute").and(takesArguments(0)).and(isPublic())),
+        PreparedStatementInstrumentation.class.getName() + "$PreparedStatementAdvice");
   }
 
   @SuppressWarnings("unused")
-  public static class PreparedStatementExecuteAdvice {
+  public static class PreparedStatementAdvice {
+    public static final Map<Integer, Object> paramValues = new HashMap<>();
+    public static boolean inUsed = false;
 
     @Advice.OnMethodEnter(suppress = Throwable.class)
     public static void onEnter(
         @Advice.This PreparedStatement statement,
+        @Advice.Origin String methodName,
+        @Advice.AllArguments(nullIfEmpty = true) Object[] args,
         @Advice.Local("otelCallDepth") CallDepth callDepth,
         @Advice.Local("otelRequest") DbRequest request,
         @Advice.Local("otelContext") Context context,
@@ -85,33 +69,47 @@ public class PreparedStatementInstrumentation implements TypeInstrumentation {
       // using CallDepth prevents this, because this check happens before Connection#getMetadata()
       // is called - the first recursive Statement call is just skipped and we do not create a span
       // for it
-      callDepth = CallDepth.forClass(Statement.class);
-      if (callDepth.getAndIncrement() > 0) {
-        return;
+      String trueMethodName = methodName.substring(0, methodName.indexOf("("));
+      trueMethodName = trueMethodName.substring(trueMethodName.lastIndexOf(".") + 1);
+      if (trueMethodName.startsWith("set") && (args != null) && (args.length > 1)) {
+
+        inUsed = true;
+        paramValues.put((Integer) args[0], args[1]);
+
+      } else if (trueMethodName.startsWith("execute")) {
+
+        callDepth = CallDepth.forClass(Statement.class);
+        if (callDepth.getAndIncrement() > 0) {
+          return;
+        }
+
+        Context parentContext = currentContext();
+        request = DbRequest.create(statement, paramValues);
+
+        if (request == null || !statementInstrumenter().shouldStart(parentContext, request)) {
+          return;
+        }
+
+        context = statementInstrumenter().start(parentContext, request);
+        scope = context.makeCurrent();
       }
-
-      Context parentContext = currentContext();
-      StatementParameterContent parameterContent =
-          PreparedStatementInstrumentation.ensureParamContent(statement);
-      Map<Integer, Object> paramValues = parameterContent.parameterValues;
-      request = DbRequest.create(statement, paramValues);
-
-      if (request == null || !statementInstrumenter().shouldStart(parentContext, request)) {
-        return;
-      }
-
-      context = statementInstrumenter().start(parentContext, request);
-      scope = context.makeCurrent();
     }
 
     @Advice.OnMethodExit(onThrowable = Throwable.class, suppress = Throwable.class)
     public static void stopSpan(
-        @Advice.This PreparedStatement statement,
+        @Advice.Origin String methodName,
         @Advice.Thrown Throwable throwable,
         @Advice.Local("otelCallDepth") CallDepth callDepth,
         @Advice.Local("otelRequest") DbRequest request,
         @Advice.Local("otelContext") Context context,
         @Advice.Local("otelScope") Scope scope) {
+
+      String trueMethodName = methodName.substring(0, methodName.indexOf("("));
+      trueMethodName = trueMethodName.substring(trueMethodName.lastIndexOf(".") + 1);
+      if (!trueMethodName.startsWith("execute")) {
+        return;
+      }
+
       if (callDepth.decrementAndGet() > 0) {
         return;
       }
@@ -119,31 +117,10 @@ public class PreparedStatementInstrumentation implements TypeInstrumentation {
       if (scope != null) {
         scope.close();
         statementInstrumenter().end(context, request, null, throwable);
-
-        StatementParameterContent parameterContent =
-            PreparedStatementInstrumentation.ensureParamContent(statement);
-        parameterContent.inUse = false;
       }
-    }
-  }
 
-  @SuppressWarnings("unused")
-  public static class PreparedStatementSetParamAdvice {
-
-    @Advice.OnMethodEnter(suppress = Throwable.class)
-    public static void recordParam(
-        @Advice.This PreparedStatement statement,
-        @Advice.Argument(value = 0, readOnly = false) int parameterIndex,
-        @Advice.Argument(value = 1, readOnly = false) Object parameterValue) {
-
-      StatementParameterContent parameterContent =
-          PreparedStatementInstrumentation.ensureParamContent(statement);
-      Map<Integer, Object> paramValues = parameterContent.parameterValues;
-      if (!parameterContent.inUse) {
-        parameterContent.inUse = true;
-        paramValues.clear();
-      }
-      paramValues.put(parameterIndex, parameterValue);
+      inUsed = false;
+      paramValues.clear();
     }
   }
 }

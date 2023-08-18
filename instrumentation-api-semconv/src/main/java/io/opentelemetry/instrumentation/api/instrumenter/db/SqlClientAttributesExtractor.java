@@ -66,8 +66,10 @@ public final class SqlClientAttributesExtractor<REQUEST, RESPONSE>
     String operation = sanitizedStatement.getOperation();
     internalSet(attributes, SemanticAttributes.DB_STATEMENT, sanitizedStatement.getFullStatement());
     internalSet(attributes, SemanticAttributes.DB_OPERATION, operation);
-    internalSet(
-        attributes, AttributeKey.stringKey("db.bind_values"), getter.getParamValues(request));
+    String paramValue = getter.getParamValues(request);
+    if (paramValue != null && paramValue.length() > 0) {
+      internalSet(attributes, AttributeKey.stringKey("db.statement.values"), paramValue);
+    }
     if (!SQL_CALL.equals(operation)) {
       internalSet(attributes, dbTableAttribute, sanitizedStatement.getMainIdentifier());
     }

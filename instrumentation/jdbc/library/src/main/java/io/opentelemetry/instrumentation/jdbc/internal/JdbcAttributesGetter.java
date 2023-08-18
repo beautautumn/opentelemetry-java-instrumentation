@@ -9,7 +9,6 @@ import io.opentelemetry.instrumentation.api.instrumenter.db.SqlClientAttributesG
 import io.opentelemetry.instrumentation.jdbc.internal.dbinfo.DbInfo;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import javax.annotation.Nullable;
 
 /**
@@ -52,11 +51,35 @@ public final class JdbcAttributesGetter implements SqlClientAttributesGetter<DbR
   @Nullable
   @Override
   public String getParamValues(DbRequest dbRequest) {
-    List<String> params = new ArrayList<>();
-    for (Map.Entry<Integer, Object> paramEntity : dbRequest.getParamValues().entrySet()) {
-      params.add(
-          String.format("index: %d, value: %s", paramEntity.getKey(), paramEntity.getValue()));
+    if (dbRequest.getParamValues().isEmpty()) {
+      return "";
     }
-    return String.join(",", params);
+
+    int minIdx = Integer.MAX_VALUE;
+    int maxIdx = Integer.MIN_VALUE;
+    for (Integer idx : dbRequest.getParamValues().keySet()) {
+      if (idx < minIdx) {
+        minIdx = idx;
+      }
+      if (idx > maxIdx) {
+        maxIdx = idx;
+      }
+    }
+
+    List<String> params = new ArrayList<>();
+    int curIdx = minIdx;
+    while (curIdx <= maxIdx) {
+      Object value = dbRequest.getParamValues().get(curIdx);
+      if (value != null) {
+        if (value instanceof String || value instanceof Character) {
+          params.add(String.format("'%s'", value));
+        }
+        else {
+          params.add(String.format("%s", value));
+        }
+      }
+      curIdx++;
+    }
+    return String.format("[%s]", String.join(",", params));
   }
 }
