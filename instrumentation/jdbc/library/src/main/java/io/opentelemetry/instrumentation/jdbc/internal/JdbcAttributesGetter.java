@@ -73,8 +73,7 @@ public final class JdbcAttributesGetter implements SqlClientAttributesGetter<DbR
       if (value != null) {
         if (value instanceof String || value instanceof Character) {
           params.add(String.format("'%s'", value));
-        }
-        else {
+        } else {
           params.add(String.format("%s", value));
         }
       }

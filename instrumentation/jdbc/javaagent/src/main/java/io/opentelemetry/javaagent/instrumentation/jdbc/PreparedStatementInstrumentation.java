@@ -50,8 +50,8 @@ public class PreparedStatementInstrumentation implements TypeInstrumentation {
 
   @SuppressWarnings("unused")
   public static class PreparedStatementAdvice {
-    public static final Map<Integer, Object> paramValues = new HashMap<>();
-    public static boolean inUsed = false;
+    public static final ThreadLocal<Map<Integer, Object>> paramValuesThreadLocal =
+        new ThreadLocal<>();
 
     @Advice.OnMethodEnter(suppress = Throwable.class)
     public static void onEnter(
@@ -69,14 +69,13 @@ public class PreparedStatementInstrumentation implements TypeInstrumentation {
       // using CallDepth prevents this, because this check happens before Connection#getMetadata()
       // is called - the first recursive Statement call is just skipped and we do not create a span
       // for it
-      String trueMethodName = methodName.substring(0, methodName.indexOf("("));
-      trueMethodName = trueMethodName.substring(trueMethodName.lastIndexOf(".") + 1);
-      if (trueMethodName.startsWith("set") && (args != null) && (args.length > 1)) {
+      String longMethodName = methodName.substring(0, methodName.indexOf("("));
+      String shortMethodName = longMethodName.substring(longMethodName.lastIndexOf(".") + 1);
+      if (shortMethodName.startsWith("set") && (args != null) && (args.length > 1)) {
 
-        inUsed = true;
-        paramValues.put((Integer) args[0], args[1]);
+        getParamValuesThreadLocal().put((Integer) args[0], args[1]);
 
-      } else if (trueMethodName.startsWith("execute")) {
+      } else if (shortMethodName.startsWith("execute")) {
 
         callDepth = CallDepth.forClass(Statement.class);
         if (callDepth.getAndIncrement() > 0) {
@@ -84,7 +83,7 @@ public class PreparedStatementInstrumentation implements TypeInstrumentation {
         }
 
         Context parentContext = currentContext();
-        request = DbRequest.create(statement, paramValues);
+        request = DbRequest.create(statement, getParamValuesThreadLocal());
 
         if (request == null || !statementInstrumenter().shouldStart(parentContext, request)) {
           return;
@@ -104,9 +103,9 @@ public class PreparedStatementInstrumentation implements TypeInstrumentation {
         @Advice.Local("otelContext") Context context,
         @Advice.Local("otelScope") Scope scope) {
 
-      String trueMethodName = methodName.substring(0, methodName.indexOf("("));
-      trueMethodName = trueMethodName.substring(trueMethodName.lastIndexOf(".") + 1);
-      if (!trueMethodName.startsWith("execute")) {
+      String longMethodName = methodName.substring(0, methodName.indexOf("("));
+      String shortMethodName = longMethodName.substring(longMethodName.lastIndexOf(".") + 1);
+      if (!shortMethodName.startsWith("execute")) {
         return;
       }
 
@@ -119,8 +118,16 @@ public class PreparedStatementInstrumentation implements TypeInstrumentation {
         statementInstrumenter().end(context, request, null, throwable);
       }
 
-      inUsed = false;
-      paramValues.clear();
+      getParamValuesThreadLocal().clear();
+    }
+
+    public static Map<Integer, Object> getParamValuesThreadLocal() {
+      Map<Integer, Object> paramValues = paramValuesThreadLocal.get();
+      if (paramValues == null) {
+        paramValues = new HashMap<>();
+        paramValuesThreadLocal.set(paramValues);
+      }
+      return paramValues;
     }
   }
 }
